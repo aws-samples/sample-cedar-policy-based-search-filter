@@ -1,0 +1,17 @@
+{
+  "app": "mvn -pl cdk exec:java -q",
+  "watch": {
+    "include": [
+      "cdk/src/main/java/**",
+      "lambda/src/main/java/**"
+    ]
+  },
+  "context": {
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/core:target-partitions": [
+      "aws",
+      "aws-cn"
+    ]
+  }
+}

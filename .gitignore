@@ -1,0 +1,182 @@
+# ==============================================================================
+# AWS CDK
+# ==============================================================================
+# CDK asset staging directory
+.cdk.staging/
+cdk.out/
+cdk.context.json
+
+# CDK output / synthesized templates
+*.d.ts
+!jest.config.d.ts
+
+# ==============================================================================
+# Node.js
+# ==============================================================================
+# Dependencies
+node_modules/
+jspm_packages/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage / test output
+coverage/
+*.lcov
+.nyc_output/
+.jest/
+
+# Caches
+.npm/
+.eslintcache
+.stylelintcache
+.node_repl_history
+.cache/
+.parcel-cache/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Package tarballs
+*.tgz
+
+# Yarn v2+ (Berry)
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+
+# Optional / lock (uncomment if you don't commit these)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# ==============================================================================
+# Java
+# ==============================================================================
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Virtual machine crash logs
+hs_err_pid*
+replay_pid*
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle-wrapper.properties
+build/
+gradle-app.setting
+.gradletasknamecache
+
+# ==============================================================================
+# IDEs & Editors
+# ==============================================================================
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# NetBeans
+nbproject/private/
+nbbuild/
+nbdist/
+.nb-gradle/
+
+# ==============================================================================
+# macOS
+# ==============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk

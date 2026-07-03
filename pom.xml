@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example.avp.opensearch</groupId>
+    <artifactId>avp-opensearch-hr-portal</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>AVP OpenSearch HR Portal</name>
+    <description>HR Portal demo with three-layer authorization using Amazon Verified Permissions and OpenSearch</description>
+
+    <modules>
+        <module>cdk</module>
+        <module>lambda</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <cdk.version>2.177.0</cdk.version>
+        <constructs.version>10.4.2</constructs.version>
+        <aws.sdk.version>2.31.9</aws.sdk.version>
+        <jackson.version>2.17.2</jackson.version>
+    </properties>
+</project>
