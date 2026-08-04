@@ -101,15 +101,19 @@ class AvpClientImplTest {
             .build();
         when(avpSdkClient.batchIsAuthorized(any(BatchIsAuthorizedRequest.class))).thenReturn(response);
 
-        Map<String, String> context = Map.of(
-            "resourceRegion", "US",
-            "resourceDepartment", "Engineering",
+        Map<String, String> userContext = Map.of(
             "region", "US",
             "department", "Engineering"
         );
 
+        List<Map<String, String>> resourceContexts = List.of(
+            Map.of("resourceRegion", "US", "resourceDepartment", "Engineering"),
+            Map.of("resourceRegion", "EU", "resourceDepartment", "HR"),
+            Map.of("resourceRegion", "US", "resourceDepartment", "Engineering")
+        );
+
         Set<String> allowed = avpClient.checkResultAccess(
-            USER_ID, ROLE, context, "employees", List.of("emp-001", "emp-004", "emp-002"));
+            USER_ID, ROLE, userContext, "employees", List.of("emp-001", "emp-004", "emp-002"), resourceContexts);
 
         assertEquals(Set.of("emp-001", "emp-002"), allowed);
     }
@@ -120,7 +124,8 @@ class AvpClientImplTest {
             .thenThrow(InternalServerException.builder().message("Internal error").build());
 
         assertThrows(AvpAuthorizationException.class, () ->
-            avpClient.checkResultAccess(USER_ID, ROLE, Map.of(), "employees", List.of("emp-001")));
+            avpClient.checkResultAccess(USER_ID, ROLE, Map.of(), "employees",
+                List.of("emp-001"), List.of(Map.of("resourceRegion", "US"))));
     }
 
     @Test
@@ -192,7 +197,7 @@ class AvpClientImplTest {
         when(avpSdkClient.batchIsAuthorized(any(BatchIsAuthorizedRequest.class))).thenReturn(response);
 
         Set<String> allowed = avpClient.checkResultAccess(
-            USER_ID, ROLE, Map.of(), "employees", List.of("emp-001"));
+            USER_ID, ROLE, Map.of(), "employees", List.of("emp-001"), List.of(Map.of()));
 
         assertEquals(Set.of("emp-001"), allowed);
     }

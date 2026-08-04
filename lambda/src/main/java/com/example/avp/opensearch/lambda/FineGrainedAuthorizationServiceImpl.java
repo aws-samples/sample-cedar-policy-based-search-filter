@@ -85,15 +85,17 @@ public class FineGrainedAuthorizationServiceImpl implements FineGrainedAuthoriza
 
             for (List<Map<String, Object>> batch : batches) {
                 List<String> resourceIds = new ArrayList<>();
+                List<Map<String, String>> resourceContexts = new ArrayList<>();
                 for (Map<String, Object> candidate : batch) {
                     resourceIds.add(extractResourceId(candidate));
+                    resourceContexts.add(buildResourceContext(candidate));
                 }
 
-                // Build context map with user and resource context attributes
-                Map<String, String> contextMap = buildContextMap(context, batch);
+                // Build user context map with user-level attributes
+                Map<String, String> userContext = buildUserContext(context);
 
                 Set<String> allowedIds = avpClient.checkResultAccess(
-                    userId, role, contextMap, entityType, resourceIds);
+                    userId, role, userContext, entityType, resourceIds, resourceContexts);
 
                 // Step 5 & 6: Cache each decision and collect allowed results
                 for (int i = 0; i < batch.size(); i++) {
@@ -137,50 +139,56 @@ public class FineGrainedAuthorizationServiceImpl implements FineGrainedAuthoriza
     }
 
     /**
-     * Builds the context map for AVP authorization requests.
+     * Builds the user-level context map for AVP authorization requests.
      * Includes:
      * - "region": user's region (from OrganizationalContext)
      * - "department": user's department (from OrganizationalContext)
-     * - "managerId": user's managerId (from OrganizationalContext roles, if available)
-     * - "resourceRegion": result's region value
-     * - "resourceDepartment": result's department value
-     * - "resourceManagerId": result's managerId value
+     * - "managerId": user's managerId (from OrganizationalContext, if available)
      *
      * @param context the user's organizational context
-     * @param batch   the batch of candidate results
-     * @return the context map for AVP calls
+     * @return the user-level context map for AVP calls
      */
-    private Map<String, String> buildContextMap(OrganizationalContext context, List<Map<String, Object>> batch) {
-        Map<String, String> contextMap = new HashMap<>();
+    private Map<String, String> buildUserContext(OrganizationalContext context) {
+        Map<String, String> userContext = new HashMap<>();
 
-        // User context attributes from OrganizationalContext
         if (context.regions() != null && !context.regions().isEmpty()) {
-            contextMap.put("region", context.regions().get(0));
+            userContext.put("region", context.regions().get(0));
         }
         if (context.departments() != null && !context.departments().isEmpty()) {
-            contextMap.put("department", context.departments().get(0));
+            userContext.put("department", context.departments().get(0));
         }
-        // managerId is not a direct field on OrganizationalContext; pass empty if not available
-        contextMap.put("managerId", "");
+        userContext.put("managerId", "");
 
-        // Resource context attributes from the batch results
-        if (!batch.isEmpty()) {
-            Map<String, Object> representative = batch.get(0);
-            Object resourceRegion = representative.get("region");
-            if (resourceRegion != null) {
-                contextMap.put("resourceRegion", resourceRegion.toString());
-            }
-            Object resourceDepartment = representative.get("department");
-            if (resourceDepartment != null) {
-                contextMap.put("resourceDepartment", resourceDepartment.toString());
-            }
-            Object resourceManagerId = representative.get("managerId");
-            if (resourceManagerId != null) {
-                contextMap.put("resourceManagerId", resourceManagerId.toString());
-            }
+        return userContext;
+    }
+
+    /**
+     * Builds a per-record resource context map for an individual candidate result.
+     * Includes:
+     * - "resourceRegion": the record's region value
+     * - "resourceDepartment": the record's department value
+     * - "resourceManagerId": the record's managerId value
+     *
+     * @param candidate the individual candidate result
+     * @return the per-record resource context map
+     */
+    private Map<String, String> buildResourceContext(Map<String, Object> candidate) {
+        Map<String, String> resourceContext = new HashMap<>();
+
+        Object resourceRegion = candidate.get("region");
+        if (resourceRegion != null) {
+            resourceContext.put("resourceRegion", resourceRegion.toString());
+        }
+        Object resourceDepartment = candidate.get("department");
+        if (resourceDepartment != null) {
+            resourceContext.put("resourceDepartment", resourceDepartment.toString());
+        }
+        Object resourceManagerId = candidate.get("managerId");
+        if (resourceManagerId != null) {
+            resourceContext.put("resourceManagerId", resourceManagerId.toString());
         }
 
-        return contextMap;
+        return resourceContext;
     }
 
     /**

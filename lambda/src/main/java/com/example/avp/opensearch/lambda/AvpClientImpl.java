@@ -97,31 +97,32 @@ public class AvpClientImpl implements AvpClient {
     public Set<String> checkResultAccess(
             String userId,
             String role,
-            Map<String, String> context,
+            Map<String, String> userContext,
             String entityType,
-            List<String> resourceIds) {
+            List<String> resourceIds,
+            List<Map<String, String>> resourceContexts) {
 
         List<BatchIsAuthorizedInputItem> requests = new ArrayList<>();
 
-        Map<String, AttributeValue> contextMap = new HashMap<>();
-        if (context.containsKey("resourceRegion")) {
-            contextMap.put("resourceRegion", AttributeValue.builder()
-                .string(context.get("resourceRegion"))
-                .build());
-        }
-        if (context.containsKey("resourceDepartment")) {
-            contextMap.put("resourceDepartment", AttributeValue.builder()
-                .string(context.get("resourceDepartment"))
-                .build());
-        }
-        if (context.containsKey("resourceManagerId")) {
-            contextMap.put("resourceManagerId", AttributeValue.builder()
-                .string(context.get("resourceManagerId"))
-                .build());
-        }
+        for (int i = 0; i < resourceIds.size(); i++) {
+            Map<String, String> perRecordContext = resourceContexts.get(i);
 
-        for (String resourceId : resourceIds) {
-            Map<String, AttributeValue> requestContext = new HashMap<>(contextMap);
+            Map<String, AttributeValue> requestContext = new HashMap<>();
+            if (perRecordContext.containsKey("resourceRegion")) {
+                requestContext.put("resourceRegion", AttributeValue.builder()
+                    .string(perRecordContext.get("resourceRegion"))
+                    .build());
+            }
+            if (perRecordContext.containsKey("resourceDepartment")) {
+                requestContext.put("resourceDepartment", AttributeValue.builder()
+                    .string(perRecordContext.get("resourceDepartment"))
+                    .build());
+            }
+            if (perRecordContext.containsKey("resourceManagerId")) {
+                requestContext.put("resourceManagerId", AttributeValue.builder()
+                    .string(perRecordContext.get("resourceManagerId"))
+                    .build());
+            }
 
             BatchIsAuthorizedInputItem.Builder inputBuilder = BatchIsAuthorizedInputItem.builder()
                 .principal(EntityIdentifier.builder()
@@ -146,9 +147,9 @@ public class AvpClientImpl implements AvpClient {
             requests.add(inputBuilder.build());
         }
 
-        String userRegion = context.getOrDefault("region", "");
-        String userDepartment = context.getOrDefault("department", "");
-        String userManagerId = context.getOrDefault("managerId", "");
+        String userRegion = userContext.getOrDefault("region", "");
+        String userDepartment = userContext.getOrDefault("department", "");
+        String userManagerId = userContext.getOrDefault("managerId", "");
         EntityItem userEntity = buildUserEntity(userId, role, userRegion, userDepartment, userManagerId);
 
         BatchIsAuthorizedResponse response = callBatchIsAuthorized(requests, List.of(userEntity), LAYER3_TIMEOUT);

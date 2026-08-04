@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 import software.amazon.awscdk.RemovalPolicy;
+import software.amazon.awscdk.services.cognito.AdvancedSecurityMode;
 import software.amazon.awscdk.services.cognito.AutoVerifiedAttrs;
 import software.amazon.awscdk.services.cognito.CfnUserPoolUser;
 import software.amazon.awscdk.services.cognito.CognitoDomainOptions;
@@ -65,7 +66,15 @@ public class AuthConstruct extends Construct {
                         .requireLowercase(true)
                         .requireUppercase(true)
                         .requireDigits(true)
-                        .requireSymbols(false)
+                        .requireSymbols(true)
+                        .build())
+                // AwsSolutions-COG3: Enable Advanced Security Mode
+                .advancedSecurityMode(AdvancedSecurityMode.ENFORCED)
+                // AwsSolutions-COG2: Require MFA
+                .mfa(software.amazon.awscdk.services.cognito.Mfa.REQUIRED)
+                .mfaSecondFactor(software.amazon.awscdk.services.cognito.MfaSecondFactor.builder()
+                        .sms(true)
+                        .otp(true)
                         .build())
                 .removalPolicy(RemovalPolicy.DESTROY)
                 .build();

@@ -8,7 +8,6 @@ import software.amazon.awscdk.StackProps;
 import software.amazon.awscdk.services.ec2.SubnetSelection;
 import software.amazon.awscdk.services.ec2.SubnetType;
 import software.amazon.awscdk.services.iam.Effect;
-import software.amazon.awscdk.services.iam.ManagedPolicy;
 import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.iam.Role;
 import software.amazon.awscdk.services.iam.ServicePrincipal;
@@ -19,7 +18,7 @@ import software.constructs.Construct;
  * <p>
  * This stack orchestrates all infrastructure constructs in the correct dependency order:
  * <ol>
- *   <li>NetworkingConstruct → VPC, security groups</li>
+ *   <li>NetworkingConstruct → VPC, security groups, VPC Flow Logs</li>
  *   <li>AuthConstruct → Cognito User Pool, app client, domain</li>
  *   <li>SearchConstruct → OpenSearch domain (needs VPC, private subnets, OpenSearch SG)</li>
  *   <li>AuthorizationConstruct → AVP policy store</li>
@@ -41,25 +40,45 @@ public class HrPortalStack extends Stack {
                 .subnetType(SubnetType.PRIVATE_WITH_EGRESS)
                 .build();
 
-        // 1. Networking: VPC, subnets, security groups
+        // 1. Networking: VPC, subnets, security groups, VPC Flow Logs
         NetworkingConstruct networking = new NetworkingConstruct(this, "Networking");
 
         // 2. Authentication: Cognito User Pool, users, app client, domain
         AuthConstruct auth = new AuthConstruct(this, "Auth");
 
         // Create a shared IAM role for OpenSearch master user access
-        // This role is used as the fine-grained access control master user
+        // AwsSolutions-IAM4: Use inline policies instead of AWS managed policies
         Role openSearchMasterRole = Role.Builder.create(this, "OpenSearchMasterRole")
                 .assumedBy(new ServicePrincipal("lambda.amazonaws.com"))
-                .managedPolicies(List.of(
-                        ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole"),
-                        ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaVPCAccessExecutionRole")))
                 .build();
 
-        // Grant OpenSearch HTTP access to the master role
+        // Grant scoped CloudWatch Logs permissions (replaces AWSLambdaBasicExecutionRole)
         openSearchMasterRole.addToPolicy(PolicyStatement.Builder.create()
                 .effect(Effect.ALLOW)
-                .actions(List.of("es:ESHttp*"))
+                .actions(List.of(
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                        "logs:PutLogEvents"))
+                .resources(List.of("arn:aws:logs:" + this.getRegion() + ":"
+                        + this.getAccount() + ":log-group:/aws/lambda/*"))
+                .build());
+
+        // Grant scoped VPC ENI permissions (replaces AWSLambdaVPCAccessExecutionRole)
+        openSearchMasterRole.addToPolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of(
+                        "ec2:CreateNetworkInterface",
+                        "ec2:DeleteNetworkInterface",
+                        "ec2:AssignPrivateIpAddresses",
+                        "ec2:UnassignPrivateIpAddresses"))
+                .resources(List.of("arn:aws:ec2:" + this.getRegion() + ":"
+                        + this.getAccount() + ":*"))
+                .build());
+
+        // DescribeNetworkInterfaces does not support resource-level permissions
+        openSearchMasterRole.addToPolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of("ec2:DescribeNetworkInterfaces"))
                 .resources(List.of("*"))
                 .build());
 
@@ -69,6 +88,18 @@ public class HrPortalStack extends Stack {
                 privateSubnets,
                 networking.getOpenSearchSecurityGroup(),
                 openSearchMasterRole.getRoleArn());
+
+        // Grant OpenSearch HTTP access scoped to the domain (replaces es:ESHttp* on *)
+        openSearchMasterRole.addToPolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of(
+                        "es:ESHttpGet",
+                        "es:ESHttpPost",
+                        "es:ESHttpPut",
+                        "es:ESHttpHead",
+                        "es:ESHttpDelete"))
+                .resources(List.of(search.getDomain().getDomainArn() + "/*"))
+                .build());
 
         // 4. Authorization: AVP policy store with Cedar schema and policies
         AuthorizationConstruct authorization = new AuthorizationConstruct(this, "Authorization");
@@ -87,7 +118,8 @@ public class HrPortalStack extends Stack {
                 authorization.getPolicyStoreId(),
                 search.getDomainEndpoint(),
                 cache.getRedisEndpoint(),
-                cache.getRedisPort());
+                cache.getRedisPort(),
+                search.getDomain().getDomainArn());
 
         // 3b. Data Seeding: Seed sample data and configure security role mappings
         DataSeedingConstruct dataSeeding = new DataSeedingConstruct(this, "DataSeeding",

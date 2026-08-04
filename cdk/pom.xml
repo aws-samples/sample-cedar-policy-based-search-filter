@@ -29,6 +29,13 @@
             <version>${cdk.version}</version>
         </dependency>
 
+        <!-- CDK Nag for security/compliance checks -->
+        <dependency>
+            <groupId>io.github.cdklabs</groupId>
+            <artifactId>cdknag</artifactId>
+            <version>2.35.82</version>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

@@ -5,7 +5,7 @@ import java.util.List;
 import software.amazon.awscdk.services.ec2.IVpc;
 import software.amazon.awscdk.services.ec2.SecurityGroup;
 import software.amazon.awscdk.services.ec2.SubnetSelection;
-import software.amazon.awscdk.services.elasticache.CfnCacheCluster;
+import software.amazon.awscdk.services.elasticache.CfnReplicationGroup;
 import software.amazon.awscdk.services.elasticache.CfnSubnetGroup;
 import software.constructs.Construct;
 
@@ -13,6 +13,8 @@ import software.constructs.Construct;
  * CDK construct that provisions an ElastiCache for Redis cluster within the VPC.
  * <p>
  * Redis is used for caching authorization decisions with a 300-second TTL.
+ * Configured with encryption at rest, encryption in transit, Redis AUTH,
+ * Multi-AZ, and a non-default port for security compliance.
  * Key patterns:
  * <ul>
  *   <li>"l1:{userId}" for Layer 1 coarse-grained authorization cache</li>
@@ -21,7 +23,8 @@ import software.constructs.Construct;
  */
 public class CacheConstruct extends Construct {
 
-    private final CfnCacheCluster cacheCluster;
+    private final CfnReplicationGroup replicationGroup;
+    private static final String REDIS_PORT = "6380";
 
     /**
      * Creates a new CacheConstruct.
@@ -30,7 +33,7 @@ public class CacheConstruct extends Construct {
      * @param id              the construct ID
      * @param vpc             the VPC to place the Redis cluster in
      * @param subnetSelection the subnet selection for Redis (should be private subnets)
-     * @param securityGroup   the security group allowing Lambda access on port 6379
+     * @param securityGroup   the security group allowing Lambda access on port 6380
      */
     public CacheConstruct(final Construct scope, final String id,
                           final IVpc vpc,
@@ -46,26 +49,38 @@ public class CacheConstruct extends Construct {
                 .subnetIds(subnetIds)
                 .build();
 
-        // Create the Redis cache cluster
-        this.cacheCluster = CfnCacheCluster.Builder.create(this, "RedisCluster")
+        // Create the Redis replication group with full security compliance
+        this.replicationGroup = CfnReplicationGroup.Builder.create(this, "RedisReplicationGroup")
+                .replicationGroupDescription("HR Portal Redis cache with encryption")
                 .engine("redis")
                 .cacheNodeType("cache.t3.micro")
-                .numCacheNodes(1)
+                // AwsSolutions-AEC4: Multi-AZ configuration for high availability
+                .numCacheClusters(2)
+                .multiAzEnabled(true)
+                .automaticFailoverEnabled(true)
                 .cacheSubnetGroupName(subnetGroup.getRef())
-                .vpcSecurityGroupIds(List.of(securityGroup.getSecurityGroupId()))
+                .securityGroupIds(List.of(securityGroup.getSecurityGroupId()))
+                // Enable encryption at rest
+                .atRestEncryptionEnabled(true)
+                // Enable encryption in transit
+                .transitEncryptionEnabled(true)
+                // AwsSolutions-AEC6: Enable Redis AUTH for user authentication
+                .authToken("HrPortalRedisAuth2024!SecureToken")
+                // AwsSolutions-AEC5: Use non-default port
+                .port(Integer.parseInt(REDIS_PORT))
                 .build();
 
-        // Ensure the cluster is created after the subnet group
-        this.cacheCluster.addDependency(subnetGroup);
+        // Ensure the replication group is created after the subnet group
+        this.replicationGroup.addDependency(subnetGroup);
     }
 
     /**
      * Returns the Redis primary endpoint address for Lambda configuration.
      *
-     * @return the Redis endpoint address (host:port format uses port 6379 by default)
+     * @return the Redis endpoint address
      */
     public String getRedisEndpoint() {
-        return cacheCluster.getAttrRedisEndpointAddress();
+        return replicationGroup.getAttrPrimaryEndPointAddress();
     }
 
     /**
@@ -74,6 +89,6 @@ public class CacheConstruct extends Construct {
      * @return the Redis endpoint port
      */
     public String getRedisPort() {
-        return cacheCluster.getAttrRedisEndpointPort();
+        return REDIS_PORT;
     }
 }

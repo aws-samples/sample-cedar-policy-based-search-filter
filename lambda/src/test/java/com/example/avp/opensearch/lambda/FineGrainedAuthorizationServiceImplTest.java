@@ -82,7 +82,7 @@ class FineGrainedAuthorizationServiceImplTest {
 
         assertEquals(1, result.size());
         assertEquals(candidate, result.get(0));
-        verify(avpClient, never()).checkResultAccess(anyString(), anyString(), any(), anyString(), anyList());
+        verify(avpClient, never()).checkResultAccess(anyString(), anyString(), any(), anyString(), anyList(), anyList());
     }
 
     @Test
@@ -102,7 +102,7 @@ class FineGrainedAuthorizationServiceImplTest {
             USER_ID, ROLE, context, ENTITY_TYPE, List.of(candidate));
 
         assertTrue(result.isEmpty());
-        verify(avpClient, never()).checkResultAccess(anyString(), anyString(), any(), anyString(), anyList());
+        verify(avpClient, never()).checkResultAccess(anyString(), anyString(), any(), anyString(), anyList(), anyList());
     }
 
     @Test
@@ -118,7 +118,7 @@ class FineGrainedAuthorizationServiceImplTest {
 
         String cacheKey = "l3:bob:employees:emp-001";
         when(redisCacheClient.get(cacheKey)).thenReturn(Optional.empty());
-        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(List.of("emp-001"))))
+        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(List.of("emp-001")), anyList()))
             .thenReturn(Set.of("emp-001"));
 
         List<Map<String, Object>> result = service.filterAuthorized(
@@ -140,7 +140,7 @@ class FineGrainedAuthorizationServiceImplTest {
 
         String cacheKey = "l3:bob:employees:emp-004";
         when(redisCacheClient.get(cacheKey)).thenReturn(Optional.empty());
-        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(List.of("emp-004"))))
+        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(List.of("emp-004")), anyList()))
             .thenReturn(Set.of()); // DENY
 
         List<Map<String, Object>> result = service.filterAuthorized(
@@ -170,7 +170,7 @@ class FineGrainedAuthorizationServiceImplTest {
         when(redisCacheClient.get("l3:bob:employees:emp-001")).thenReturn(Optional.of("ALLOW"));
         when(redisCacheClient.get("l3:bob:employees:emp-004")).thenReturn(Optional.of("DENY"));
         when(redisCacheClient.get("l3:bob:employees:emp-002")).thenReturn(Optional.empty());
-        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(List.of("emp-002"))))
+        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(List.of("emp-002")), anyList()))
             .thenReturn(Set.of("emp-002"));
 
         List<Map<String, Object>> candidates = List.of(cachedAllowed, cachedDenied, uncached);
@@ -192,7 +192,7 @@ class FineGrainedAuthorizationServiceImplTest {
         candidate.put("region", "US");
 
         when(redisCacheClient.get("l3:bob:employees:emp-001")).thenReturn(Optional.empty());
-        when(avpClient.checkResultAccess(anyString(), anyString(), any(), anyString(), anyList()))
+        when(avpClient.checkResultAccess(anyString(), anyString(), any(), anyString(), anyList(), anyList()))
             .thenThrow(new AvpAuthorizationException("AVP unreachable"));
 
         List<Map<String, Object>> result = service.filterAuthorized(
@@ -226,7 +226,7 @@ class FineGrainedAuthorizationServiceImplTest {
         for (int i = 1; i <= 30; i++) {
             firstBatchIds.add("emp-" + String.format("%03d", i));
         }
-        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(firstBatchIds)))
+        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(firstBatchIds), anyList()))
             .thenReturn(Set.copyOf(firstBatchIds));
 
         // Second batch (5 items) - all allowed
@@ -234,7 +234,7 @@ class FineGrainedAuthorizationServiceImplTest {
         for (int i = 31; i <= 35; i++) {
             secondBatchIds.add("emp-" + String.format("%03d", i));
         }
-        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(secondBatchIds)))
+        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(secondBatchIds), anyList()))
             .thenReturn(Set.copyOf(secondBatchIds));
 
         List<Map<String, Object>> result = service.filterAuthorized(
@@ -309,16 +309,20 @@ class FineGrainedAuthorizationServiceImplTest {
         candidate.put("managerId", "mgr-001");
 
         when(redisCacheClient.get("l3:bob:employees:emp-001")).thenReturn(Optional.empty());
-        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(List.of("emp-001"))))
+        when(avpClient.checkResultAccess(eq(USER_ID), eq(ROLE), any(), eq(ENTITY_TYPE), eq(List.of("emp-001")), anyList()))
             .thenAnswer(invocation -> {
-                Map<String, String> contextMap = invocation.getArgument(2);
+                Map<String, String> userContext = invocation.getArgument(2);
                 // Verify user context attributes
-                assertEquals("US", contextMap.get("region"));
-                assertEquals("HR", contextMap.get("department"));
-                // Verify resource context attributes
-                assertEquals("US", contextMap.get("resourceRegion"));
-                assertEquals("Engineering", contextMap.get("resourceDepartment"));
-                assertEquals("mgr-001", contextMap.get("resourceManagerId"));
+                assertEquals("US", userContext.get("region"));
+                assertEquals("HR", userContext.get("department"));
+
+                // Verify per-record resource context attributes
+                List<Map<String, String>> resourceContexts = invocation.getArgument(5);
+                assertEquals(1, resourceContexts.size());
+                Map<String, String> resourceContext = resourceContexts.get(0);
+                assertEquals("US", resourceContext.get("resourceRegion"));
+                assertEquals("Engineering", resourceContext.get("resourceDepartment"));
+                assertEquals("mgr-001", resourceContext.get("resourceManagerId"));
                 return Set.of("emp-001");
             });
 

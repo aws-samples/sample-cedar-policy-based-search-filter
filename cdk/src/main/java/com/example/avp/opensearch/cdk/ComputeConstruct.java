@@ -4,11 +4,11 @@ import java.util.List;
 import java.util.Map;
 
 import software.amazon.awscdk.Duration;
+import software.amazon.awscdk.Stack;
 import software.amazon.awscdk.services.ec2.ISecurityGroup;
 import software.amazon.awscdk.services.ec2.IVpc;
 import software.amazon.awscdk.services.ec2.SubnetSelection;
 import software.amazon.awscdk.services.iam.Effect;
-import software.amazon.awscdk.services.iam.ManagedPolicy;
 import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.lambda.Code;
 import software.amazon.awscdk.services.lambda.Function;
@@ -44,6 +44,7 @@ public class ComputeConstruct extends Construct {
      * @param openSearchEndpoint the OpenSearch domain HTTPS endpoint
      * @param redisEndpoint      the Redis cluster endpoint address
      * @param redisPort          the Redis cluster endpoint port
+     * @param openSearchDomainArn the OpenSearch domain ARN for scoped IAM permissions
      */
     public ComputeConstruct(final Construct scope, final String id,
                             final IVpc vpc,
@@ -52,7 +53,8 @@ public class ComputeConstruct extends Construct {
                             final String policyStoreId,
                             final String openSearchEndpoint,
                             final String redisEndpoint,
-                            final String redisPort) {
+                            final String redisPort,
+                            final String openSearchDomainArn) {
         super(scope, id);
 
         this.function = Function.Builder.create(this, "SearchHandler")
@@ -74,25 +76,56 @@ public class ComputeConstruct extends Construct {
                 ))
                 .build();
 
-        // Grant VPC execution permissions (ENI management for VPC-attached Lambda)
-        this.function.getRole().addManagedPolicy(
-                ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaVPCAccessExecutionRole"));
+        // AwsSolutions-IAM4: Replace managed VPC policy with scoped inline policy
+        // Grant ENI management for VPC-attached Lambda (instead of AWSLambdaVPCAccessExecutionRole)
+        this.function.addToRolePolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of(
+                        "ec2:CreateNetworkInterface",
+                        "ec2:DeleteNetworkInterface",
+                        "ec2:AssignPrivateIpAddresses",
+                        "ec2:UnassignPrivateIpAddresses"))
+                .resources(List.of("arn:aws:ec2:" + Stack.of(this).getRegion() + ":"
+                        + Stack.of(this).getAccount() + ":*"))
+                .build());
 
-        // Grant AVP permissions on the policy store
+        // DescribeNetworkInterfaces does not support resource-level permissions
+        this.function.addToRolePolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of("ec2:DescribeNetworkInterfaces"))
+                .resources(List.of("*"))
+                .build());
+
+        // AwsSolutions-IAM4: Replace managed BasicExecution policy with scoped inline policy
+        this.function.addToRolePolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of(
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                        "logs:PutLogEvents"))
+                .resources(List.of("arn:aws:logs:" + Stack.of(this).getRegion() + ":"
+                        + Stack.of(this).getAccount() + ":log-group:/aws/lambda/*"))
+                .build());
+
+        // Grant AVP permissions on the policy store (scoped resource)
         this.function.addToRolePolicy(PolicyStatement.Builder.create()
                 .effect(Effect.ALLOW)
                 .actions(List.of(
                         "verifiedpermissions:IsAuthorized",
                         "verifiedpermissions:BatchIsAuthorized",
                         "verifiedpermissions:IsAuthorizedWithToken"))
-                .resources(List.of("arn:aws:verifiedpermissions:*:*:policy-store/" + policyStoreId))
+                .resources(List.of("arn:aws:verifiedpermissions:" + Stack.of(this).getRegion() + ":"
+                        + Stack.of(this).getAccount() + ":policy-store/" + policyStoreId))
                 .build());
 
-        // Grant OpenSearch HTTP access
+        // AwsSolutions-IAM5: Grant OpenSearch HTTP access scoped to the domain (read/search only)
         this.function.addToRolePolicy(PolicyStatement.Builder.create()
                 .effect(Effect.ALLOW)
-                .actions(List.of("es:ESHttp*"))
-                .resources(List.of("*"))
+                .actions(List.of(
+                        "es:ESHttpGet",
+                        "es:ESHttpPost",
+                        "es:ESHttpHead"))
+                .resources(List.of(openSearchDomainArn + "/*"))
                 .build());
     }
 

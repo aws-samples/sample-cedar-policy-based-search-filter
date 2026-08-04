@@ -22,6 +22,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
@@ -30,6 +32,7 @@ import java.util.stream.Collectors;
  */
 public class OpenSearchClientImpl implements OpenSearchClient {
 
+    private static final Logger LOGGER = Logger.getLogger(OpenSearchClientImpl.class.getName());
     private static final String INDEX_PREFIX = "index-";
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
@@ -99,15 +102,11 @@ public class OpenSearchClientImpl implements OpenSearchClient {
         try {
             String requestBody = buildQueryJson(query, filter);
             String indicesPath = buildIndicesPath(permittedEntityTypes);
-            System.out.println("[OpenSearchClient] Endpoint: " + openSearchEndpoint);
-            System.out.println("[OpenSearchClient] Indices path: " + indicesPath);
-            System.out.println("[OpenSearchClient] Request body: " + requestBody);
+            LOGGER.fine(() -> "[OpenSearchClient] Indices path: " + indicesPath);
             String responseBody = executeSignedRequest(indicesPath, requestBody);
-            System.out.println("[OpenSearchClient] Response (first 500 chars): " + (responseBody != null ? responseBody.substring(0, Math.min(500, responseBody.length())) : "null"));
             return parseResponse(responseBody);
         } catch (Exception e) {
-            System.out.println("[OpenSearchClient] ERROR: " + e.getClass().getName() + ": " + e.getMessage());
-            e.printStackTrace();
+            LOGGER.log(Level.SEVERE, "OpenSearch request failed", e);
             // Fail-closed: return empty results on error
             return Collections.emptyMap();
         }

@@ -7,14 +7,15 @@ import software.amazon.awscdk.services.ec2.ISecurityGroup;
 import software.amazon.awscdk.services.ec2.IVpc;
 import software.amazon.awscdk.services.ec2.SubnetSelection;
 import software.amazon.awscdk.services.ec2.SubnetType;
-import software.amazon.awscdk.services.iam.Effect;
-import software.amazon.awscdk.services.iam.PolicyStatement;
+import software.amazon.awscdk.services.logs.LogGroup;
+import software.amazon.awscdk.services.logs.RetentionDays;
 import software.amazon.awscdk.services.opensearchservice.AdvancedSecurityOptions;
 import software.amazon.awscdk.services.opensearchservice.CapacityConfig;
 import software.amazon.awscdk.services.opensearchservice.Domain;
 import software.amazon.awscdk.services.opensearchservice.EbsOptions;
 import software.amazon.awscdk.services.opensearchservice.EncryptionAtRestOptions;
 import software.amazon.awscdk.services.opensearchservice.EngineVersion;
+import software.amazon.awscdk.services.opensearchservice.LoggingOptions;
 import software.amazon.awscdk.services.opensearchservice.TLSSecurityPolicy;
 import software.amazon.awscdk.services.opensearchservice.ZoneAwarenessConfig;
 import software.constructs.Construct;
@@ -46,6 +47,7 @@ public class SearchConstruct extends Construct {
      * @param vpc             the VPC to deploy the domain into
      * @param subnetSelection the subnet selection for domain placement (private subnets)
      * @param securityGroup   the security group allowing Lambda access on port 443
+     * @param masterUserRoleArn the ARN of the IAM role for fine-grained access master user
      */
     public SearchConstruct(final Construct scope, final String id,
                            final IVpc vpc,
@@ -54,31 +56,38 @@ public class SearchConstruct extends Construct {
                            final String masterUserRoleArn) {
         super(scope, id);
 
-        // For a single-node domain, we need exactly one subnet
-        // Select the first private subnet directly
-        String singleSubnetId = vpc.selectSubnets(SubnetSelection.builder()
-                .subnetType(SubnetType.PRIVATE_WITH_EGRESS)
-                .build()).getSubnetIds().get(0);
+        // Create CloudWatch Log Groups for OpenSearch slow logs (AwsSolutions-OS9)
+        LogGroup searchSlowLogGroup = LogGroup.Builder.create(this, "SearchSlowLogGroup")
+                .logGroupName("/aws/opensearch/hr-portal/search-slow-logs")
+                .retention(RetentionDays.ONE_WEEK)
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+
+        LogGroup indexSlowLogGroup = LogGroup.Builder.create(this, "IndexSlowLogGroup")
+                .logGroupName("/aws/opensearch/hr-portal/index-slow-logs")
+                .retention(RetentionDays.ONE_WEEK)
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
 
         this.domain = Domain.Builder.create(this, "HrPortalOpenSearch")
                 .version(EngineVersion.OPENSEARCH_2_11)
                 .domainName("hr-portal-search")
-                // Place in VPC with a single private subnet (single-node requires exactly one)
+                // Place in VPC with private subnets across 2 AZs for zone awareness
                 .vpc(vpc)
                 .vpcSubnets(List.of(SubnetSelection.builder()
-                        .subnets(List.of(
-                                vpc.selectSubnets(SubnetSelection.builder()
-                                        .subnetType(SubnetType.PRIVATE_WITH_EGRESS)
-                                        .build()).getSubnets().get(0)))
+                        .subnetType(SubnetType.PRIVATE_WITH_EGRESS)
                         .build()))
                 .securityGroups(List.of(securityGroup))
-                // Use a small instance type suitable for demo
+                // AwsSolutions-OS4: Use dedicated master nodes
+                // AwsSolutions-OS7: Enable zone awareness across 2 AZs
                 .capacity(CapacityConfig.builder()
                         .dataNodeInstanceType("t3.small.search")
-                        .dataNodes(1)
+                        .dataNodes(2)
+                        .masterNodeInstanceType("t3.small.search")
+                        .masterNodes(3)
                         .multiAzWithStandbyEnabled(false)
                         .build())
-                // EBS storage for the data node
+                // EBS storage for the data nodes
                 .ebs(EbsOptions.builder()
                         .volumeSize(10)
                         .enabled(true)
@@ -93,25 +102,36 @@ public class SearchConstruct extends Construct {
                 .encryptionAtRest(EncryptionAtRestOptions.builder()
                         .enabled(true)
                         .build())
-                // Enforce HTTPS
+                // Enforce HTTPS (AwsSolutions-OS5: no unsigned/anonymous access via fine-grained access control)
                 .enforceHttps(true)
-                // Use TLS 1.2 security policy (TLS 1.0 policies are disabled)
+                // Use TLS 1.2 security policy
                 .tlsSecurityPolicy(TLSSecurityPolicy.TLS_1_2_PFS)
-                // Single-AZ for demo (cost optimization)
+                // AwsSolutions-OS7: Enable zone awareness
                 .zoneAwareness(ZoneAwarenessConfig.builder()
-                        .enabled(false)
+                        .enabled(true)
+                        .availabilityZoneCount(2)
+                        .build())
+                // AwsSolutions-OS9: Publish slow logs to CloudWatch
+                .logging(LoggingOptions.builder()
+                        .slowSearchLogEnabled(true)
+                        .slowSearchLogGroup(searchSlowLogGroup)
+                        .slowIndexLogEnabled(true)
+                        .slowIndexLogGroup(indexSlowLogGroup)
                         .build())
                 // Remove on stack deletion for demo purposes
                 .removalPolicy(RemovalPolicy.DESTROY)
                 .build();
 
-        // Grant open access policy on the domain (fine-grained access control handles authorization)
-        this.domain.addAccessPolicies(PolicyStatement.Builder.create()
-                .effect(Effect.ALLOW)
-                .principals(List.of(new software.amazon.awscdk.services.iam.AnyPrincipal()))
-                .actions(List.of("es:ESHttp*"))
-                .resources(List.of(this.domain.getDomainArn() + "/*"))
-                .build());
+        // AwsSolutions-OS3/OS5: Use IAM-based access policy restricted to the master role
+        // Fine-grained access control handles authorization; restrict to specific principal
+        this.domain.addAccessPolicies(
+                software.amazon.awscdk.services.iam.PolicyStatement.Builder.create()
+                        .effect(software.amazon.awscdk.services.iam.Effect.ALLOW)
+                        .principals(List.of(
+                                new software.amazon.awscdk.services.iam.ArnPrincipal(masterUserRoleArn)))
+                        .actions(List.of("es:ESHttp*"))
+                        .resources(List.of(this.domain.getDomainArn() + "/*"))
+                        .build());
     }
 
     /**

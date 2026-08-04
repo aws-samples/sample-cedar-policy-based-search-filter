@@ -4,10 +4,11 @@ import { config } from '../config';
 
 /**
  * Axios instance configured to communicate with the Search Service API.
- * Automatically attaches the user's access token as a Bearer header
- * on every request.
+ * Automatically attaches the user's Cognito ID token as a Bearer header
+ * on every request. The API Gateway Cognito User Pools authorizer validates
+ * the ID token and makes its claims available to the Lambda handler.
  *
- * Requirement 2.2: Store access/ID tokens, use access token in Authorization header
+ * Requirement 2.2: Store access/ID tokens, use ID token in Authorization header
  */
 const apiClient: AxiosInstance = axios.create({
   baseURL: config.api.baseUrl,
@@ -18,7 +19,7 @@ const apiClient: AxiosInstance = axios.create({
 });
 
 /**
- * Request interceptor that attaches the current access token
+ * Request interceptor that attaches the current Cognito ID token
  * to the Authorization header before each request.
  */
 apiClient.interceptors.request.use(
@@ -43,7 +44,7 @@ apiClient.interceptors.request.use(
 
 /**
  * Response interceptor that handles authentication errors.
- * Requirement 2.6: If access token expires or becomes invalid,
+ * Requirement 2.6: If the ID token expires or becomes invalid,
  * redirect to login screen.
  */
 apiClient.interceptors.response.use(

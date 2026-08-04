@@ -2,6 +2,9 @@ package com.example.avp.opensearch.cdk;
 
 import java.util.List;
 
+import software.amazon.awscdk.services.ec2.FlowLog;
+import software.amazon.awscdk.services.ec2.FlowLogDestination;
+import software.amazon.awscdk.services.ec2.FlowLogTrafficType;
 import software.amazon.awscdk.services.ec2.Peer;
 import software.amazon.awscdk.services.ec2.Port;
 import software.amazon.awscdk.services.ec2.SecurityGroup;
@@ -13,7 +16,7 @@ import software.constructs.Construct;
 /**
  * CDK construct that provisions VPC networking infrastructure for the HR Portal.
  * <p>
- * Creates a VPC with public and private subnets, and security groups for
+ * Creates a VPC with public and private subnets, VPC Flow Logs, and security groups for
  * Lambda, OpenSearch, and Redis communication.
  */
 public class NetworkingConstruct extends Construct {
@@ -41,6 +44,13 @@ public class NetworkingConstruct extends Construct {
                                 .cidrMask(24)
                                 .build()
                 ))
+                .build();
+
+        // Add VPC Flow Logs to CloudWatch (AwsSolutions-VPC7)
+        FlowLog.Builder.create(this, "VpcFlowLog")
+                .resourceType(software.amazon.awscdk.services.ec2.FlowLogResourceType.fromVpc(this.vpc))
+                .destination(FlowLogDestination.toCloudWatchLogs())
+                .trafficType(FlowLogTrafficType.ALL)
                 .build();
 
         // Security group for Lambda functions
@@ -72,8 +82,8 @@ public class NetworkingConstruct extends Construct {
 
         this.redisSecurityGroup.addIngressRule(
                 Peer.securityGroupId(lambdaSecurityGroup.getSecurityGroupId()),
-                Port.tcp(6379),
-                "Allow Redis from Lambda"
+                Port.tcp(6380),
+                "Allow Redis from Lambda on non-default port"
         );
     }
 

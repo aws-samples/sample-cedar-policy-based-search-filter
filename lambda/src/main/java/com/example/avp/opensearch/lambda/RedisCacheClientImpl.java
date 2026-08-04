@@ -31,6 +31,7 @@ public class RedisCacheClientImpl implements RedisCacheClient {
 
     /**
      * Constructs a RedisCacheClientImpl with the given endpoint and port.
+     * Uses TLS for encryption in transit.
      *
      * @param endpoint the Redis host endpoint
      * @param port     the Redis port
@@ -40,7 +41,8 @@ public class RedisCacheClientImpl implements RedisCacheClient {
         poolConfig.setMaxTotal(8);
         poolConfig.setMaxIdle(4);
         poolConfig.setMinIdle(1);
-        this.jedisPool = new JedisPool(poolConfig, endpoint, port, CONNECTION_TIMEOUT_MS);
+        // Use TLS (ssl=true) for encryption in transit
+        this.jedisPool = new JedisPool(poolConfig, endpoint, port, CONNECTION_TIMEOUT_MS, null, true);
     }
 
     /**

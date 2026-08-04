@@ -87,25 +87,22 @@ public class SearchHandler implements RequestHandler<APIGatewayProxyRequestEvent
             // 1. Parse request body as SearchRequest
             SearchRequest searchRequest = parseSearchRequest(event.getBody());
             String query = searchRequest.query();
-            System.out.println("[SearchHandler] Query: " + query);
 
             if (query == null || query.isBlank()) {
-                System.out.println("[SearchHandler] Empty query, returning empty results");
                 return buildResponse(200, new SearchResponse(Collections.emptyMap(), 0, null));
             }
 
             // 2. Extract user identity from Cognito claims
             String userId = extractUserId(event);
             String role = extractRole(event);
-            System.out.println("[SearchHandler] UserId: " + userId + ", Role: " + role);
+            LOGGER.info(() -> "Processing search request for role=" + role);
 
             // 3. Layer 1: Coarse-grained authorization - get permitted entity types
             Set<String> permittedEntityTypes = coarseAuthorizationService.getPermittedEntityTypes(userId, role);
-            System.out.println("[SearchHandler] Permitted entity types: " + permittedEntityTypes);
+            LOGGER.fine(() -> "Permitted entity types: " + permittedEntityTypes);
 
             // 4. If empty, return empty results
             if (permittedEntityTypes.isEmpty()) {
-                System.out.println("[SearchHandler] No permitted entity types, returning empty results");
                 return buildResponse(200, new SearchResponse(Collections.emptyMap(), 0, null));
             }
 
@@ -114,18 +111,16 @@ public class SearchHandler implements RequestHandler<APIGatewayProxyRequestEvent
             try {
                 orgContext = authorizationContextService.getOrganizationalContext(userId, role);
             } catch (Exception e) {
-                System.out.println("[SearchHandler] AuthorizationContextService error: " + e.getMessage());
+                LOGGER.log(Level.WARNING, "AuthorizationContextService error, failing closed", e);
                 return buildResponse(200, new SearchResponse(Collections.emptyMap(), 0, null));
             }
-            System.out.println("[SearchHandler] OrgContext: regions=" + orgContext.regions() + ", departments=" + orgContext.departments());
 
             // 6. Layer 2: Build pre-filter from organizational context
             Map<String, Object> filter = preFilterService.buildFilter(orgContext);
-            System.out.println("[SearchHandler] Filter: " + filter);
 
             // 7. Execute OpenSearch query with pre-filters
             Map<String, List<Map<String, Object>>> searchResults = openSearchClient.search(query, permittedEntityTypes, filter);
-            System.out.println("[SearchHandler] OpenSearch results: " + searchResults.size() + " entity types, total docs: " + searchResults.values().stream().mapToInt(List::size).sum());
+            LOGGER.fine(() -> "OpenSearch returned " + searchResults.size() + " entity types");
 
             // 8. Layer 3: Fine-grained authorization per entity type
             Map<String, List<Map<String, Object>>> filteredResults = new HashMap<>();

@@ -377,21 +377,13 @@ async function bulkIndex(indexName, documents, idField) {
 const SEARCH_LAMBDA_ROLE_ARN = process.env.SEARCH_LAMBDA_ROLE_ARN;
 
 /**
- * Maps IAM roles to the all_access internal role
- * in OpenSearch's fine-grained access control.
+ * Maps IAM roles to appropriate OpenSearch internal roles.
+ * - Seeding Lambda → all_access (needs full admin for index creation and role mapping)
+ * - Search Lambda → readall (read/search-only access to indices)
  */
-async function mapRolesToAllAccess() {
-  // Get the current Lambda's execution role ARN from the environment
-  const currentRoleArn = process.env.AWS_LAMBDA_FUNCTION_NAME 
-    ? `arn:aws:iam::${process.env.AWS_ACCOUNT_ID || ''}:role/*` 
-    : '';
-
-  const rolesToMap = [];
-  if (SEARCH_LAMBDA_ROLE_ARN) {
-    rolesToMap.push(SEARCH_LAMBDA_ROLE_ARN);
-  }
-
-  // Also map the seeding Lambda's own role (extracted from STS)
+async function mapRolesToOpenSearch() {
+  // Determine the seeding Lambda's own role ARN
+  let seedingRoleArn = null;
   try {
     const { STSClient, GetCallerIdentityCommand } = require("@aws-sdk/client-sts");
     const stsClient = new STSClient({ region: REGION });
@@ -400,38 +392,58 @@ async function mapRolesToAllAccess() {
     // Extract role ARN from assumed-role ARN: arn:aws:sts::ACCOUNT:assumed-role/ROLE_NAME/SESSION
     const match = callerArn.match(/arn:aws:sts::(\d+):assumed-role\/([^/]+)/);
     if (match) {
-      const seedingRoleArn = `arn:aws:iam::${match[1]}:role/${match[2]}`;
-      rolesToMap.push(seedingRoleArn);
+      seedingRoleArn = `arn:aws:iam::${match[1]}:role/${match[2]}`;
       console.log(`Seeding Lambda role: ${seedingRoleArn}`);
     }
   } catch (e) {
     console.log("Could not determine seeding Lambda role:", e.message);
   }
 
-  if (rolesToMap.length === 0) {
-    console.log("No roles to map, skipping");
-    return;
+  // Map seeding Lambda role to all_access (needs admin for index creation & role mapping)
+  const allAccessRoles = [];
+  if (seedingRoleArn) {
+    allAccessRoles.push(seedingRoleArn);
   }
 
-  console.log(`Mapping roles to all_access: ${JSON.stringify(rolesToMap)}`);
-
-  // Try PUT to create/replace the role mapping
-  const createBody = {
-    backend_roles: rolesToMap
-  };
-  const createResult = await signedRequest("PUT", "/_plugins/_security/api/rolesmapping/all_access", createBody);
-  
-  if (createResult.statusCode >= 200 && createResult.statusCode < 300) {
-    console.log("Successfully created/updated all_access role mapping");
-  } else {
-    console.error(`Failed to create role mapping: ${createResult.statusCode} ${createResult.body}`);
-    // Try PATCH as fallback
-    const patchBody = [{ op: "replace", path: "/backend_roles", value: rolesToMap }];
-    const patchResult = await signedRequest("PATCH", "/_plugins/_security/api/rolesmapping/all_access", patchBody);
-    if (patchResult.statusCode >= 200 && patchResult.statusCode < 300) {
-      console.log("Successfully patched all_access role mapping");
+  if (allAccessRoles.length > 0) {
+    console.log(`Mapping roles to all_access: ${JSON.stringify(allAccessRoles)}`);
+    const createResult = await signedRequest("PUT", "/_plugins/_security/api/rolesmapping/all_access", {
+      backend_roles: allAccessRoles
+    });
+    if (createResult.statusCode >= 200 && createResult.statusCode < 300) {
+      console.log("Successfully mapped seeding role to all_access");
     } else {
-      console.error(`PATCH also failed: ${patchResult.statusCode} ${patchResult.body}`);
+      console.error(`Failed to create all_access role mapping: ${createResult.statusCode} ${createResult.body}`);
+      // Try PATCH as fallback
+      const patchBody = [{ op: "replace", path: "/backend_roles", value: allAccessRoles }];
+      const patchResult = await signedRequest("PATCH", "/_plugins/_security/api/rolesmapping/all_access", patchBody);
+      if (patchResult.statusCode >= 200 && patchResult.statusCode < 300) {
+        console.log("Successfully patched all_access role mapping");
+      } else {
+        console.error(`PATCH also failed: ${patchResult.statusCode} ${patchResult.body}`);
+      }
+    }
+  }
+
+  // Map search Lambda role to readall + kibana_user (read/search-only access)
+  if (SEARCH_LAMBDA_ROLE_ARN) {
+    console.log(`Mapping search Lambda role to readall: ${SEARCH_LAMBDA_ROLE_ARN}`);
+
+    const readAllResult = await signedRequest("PUT", "/_plugins/_security/api/rolesmapping/readall", {
+      backend_roles: [SEARCH_LAMBDA_ROLE_ARN]
+    });
+    if (readAllResult.statusCode >= 200 && readAllResult.statusCode < 300) {
+      console.log("Successfully mapped search Lambda role to readall");
+    } else {
+      console.error(`Failed to map search Lambda to readall: ${readAllResult.statusCode} ${readAllResult.body}`);
+      // Try PATCH as fallback
+      const patchBody = [{ op: "replace", path: "/backend_roles", value: [SEARCH_LAMBDA_ROLE_ARN] }];
+      const patchResult = await signedRequest("PATCH", "/_plugins/_security/api/rolesmapping/readall", patchBody);
+      if (patchResult.statusCode >= 200 && patchResult.statusCode < 300) {
+        console.log("Successfully patched readall role mapping");
+      } else {
+        console.error(`PATCH readall also failed: ${patchResult.statusCode} ${patchResult.body}`);
+      }
     }
   }
 }
@@ -440,8 +452,8 @@ async function mapRolesToAllAccess() {
  * Seeds all data into OpenSearch.
  */
 async function seedData() {
-  // First, map all Lambda roles to all_access
-  await mapRolesToAllAccess();
+  // First, map Lambda roles to appropriate OpenSearch internal roles
+  await mapRolesToOpenSearch();
 
   // Create indices with mappings
   for (const [indexName, mappings] of Object.entries(INDEX_MAPPINGS)) {

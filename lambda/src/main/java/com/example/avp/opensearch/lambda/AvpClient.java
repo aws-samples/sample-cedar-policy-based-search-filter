@@ -23,21 +23,25 @@ public interface AvpClient {
 
     /**
      * Layer 3: Checks fine-grained access for individual results.
+     * Each resource is evaluated with its own per-record context attributes,
+     * enabling truly per-record authorization decisions.
      * Timeout: 10 seconds.
      *
-     * @param userId      the user's identifier
-     * @param role        the user's role
-     * @param context     user context attributes (region, department, managerId)
-     * @param entityType  the entity type of the results
-     * @param resourceIds the resource identifiers to check
+     * @param userId          the user's identifier
+     * @param role            the user's role
+     * @param userContext     user-level context attributes (region, department, managerId)
+     * @param entityType      the entity type of the results
+     * @param resourceIds     the resource identifiers to check
+     * @param resourceContexts per-record context maps (one per resourceId, same order)
      * @return the set of resource IDs for which AVP returned ALLOW
      */
     Set<String> checkResultAccess(
         String userId,
         String role,
-        Map<String, String> context,
+        Map<String, String> userContext,
         String entityType,
-        List<String> resourceIds
+        List<String> resourceIds,
+        List<Map<String, String>> resourceContexts
     );
 
     /**
