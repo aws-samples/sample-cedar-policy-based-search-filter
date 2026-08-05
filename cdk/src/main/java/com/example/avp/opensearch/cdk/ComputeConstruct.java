@@ -115,13 +115,14 @@ public class ComputeConstruct extends Construct {
                 .build());
 
         // Grant AVP permissions on the policy store (scoped resource)
+        // AVP resource ARNs are regionless: arn:aws:verifiedpermissions::ACCOUNT:policy-store/ID
         this.function.addToRolePolicy(PolicyStatement.Builder.create()
                 .effect(Effect.ALLOW)
                 .actions(List.of(
                         "verifiedpermissions:IsAuthorized",
                         "verifiedpermissions:BatchIsAuthorized",
                         "verifiedpermissions:IsAuthorizedWithToken"))
-                .resources(List.of("arn:aws:verifiedpermissions:" + Stack.of(this).getRegion() + ":"
+                .resources(List.of("arn:aws:verifiedpermissions::" 
                         + Stack.of(this).getAccount() + ":policy-store/" + policyStoreId))
                 .build());
 
