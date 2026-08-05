@@ -119,7 +119,8 @@ public class HrPortalStack extends Stack {
                 search.getDomainEndpoint(),
                 cache.getRedisEndpoint(),
                 cache.getRedisPort(),
-                search.getDomain().getDomainArn());
+                search.getDomain().getDomainArn(),
+                cache.getAuthTokenSecret());
 
         // 3b. Data Seeding: Seed sample data and configure security role mappings
         DataSeedingConstruct dataSeeding = new DataSeedingConstruct(this, "DataSeeding",

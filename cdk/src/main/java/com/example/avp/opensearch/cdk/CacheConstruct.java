@@ -2,19 +2,25 @@ package com.example.avp.opensearch.cdk;
 
 import java.util.List;
 
+import io.github.cdklabs.cdknag.NagPackSuppression;
+import io.github.cdklabs.cdknag.NagSuppressions;
+import software.amazon.awscdk.RemovalPolicy;
 import software.amazon.awscdk.services.ec2.IVpc;
 import software.amazon.awscdk.services.ec2.SecurityGroup;
 import software.amazon.awscdk.services.ec2.SubnetSelection;
 import software.amazon.awscdk.services.elasticache.CfnReplicationGroup;
 import software.amazon.awscdk.services.elasticache.CfnSubnetGroup;
+import software.amazon.awscdk.services.secretsmanager.Secret;
+import software.amazon.awscdk.services.secretsmanager.SecretStringGenerator;
 import software.constructs.Construct;
 
 /**
  * CDK construct that provisions an ElastiCache for Redis cluster within the VPC.
  * <p>
  * Redis is used for caching authorization decisions with a 300-second TTL.
- * Configured with encryption at rest, encryption in transit, Redis AUTH,
- * Multi-AZ, and a non-default port for security compliance.
+ * Configured with encryption at rest, encryption in transit, Redis AUTH
+ * (token stored in Secrets Manager), Multi-AZ, and a non-default port for
+ * security compliance.
  * Key patterns:
  * <ul>
  *   <li>"l1:{userId}" for Layer 1 coarse-grained authorization cache</li>
@@ -24,6 +30,7 @@ import software.constructs.Construct;
 public class CacheConstruct extends Construct {
 
     private final CfnReplicationGroup replicationGroup;
+    private final Secret authTokenSecret;
     private static final String REDIS_PORT = "6380";
 
     /**
@@ -40,6 +47,30 @@ public class CacheConstruct extends Construct {
                           final SubnetSelection subnetSelection,
                           final SecurityGroup securityGroup) {
         super(scope, id);
+
+        // Create a Secrets Manager secret for the Redis AUTH token
+        this.authTokenSecret = Secret.Builder.create(this, "RedisAuthToken")
+                .secretName("hr-portal/redis-auth-token")
+                .description("Redis AUTH token for HR Portal ElastiCache cluster")
+                .generateSecretString(SecretStringGenerator.builder()
+                        .excludePunctuation(false)
+                        .includeSpace(false)
+                        .passwordLength(32)
+                        // ElastiCache AUTH tokens only allow printable ASCII excluding: /, @, ", and space
+                        .excludeCharacters("/@\" ")
+                        .build())
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+
+        // Suppress AwsSolutions-SMG4: Auto-rotation for Redis AUTH tokens requires a custom
+        // rotation Lambda with VPC access to atomically update both the secret and the cluster.
+        // Recommended for production but not implemented in this demo.
+        NagSuppressions.addResourceSuppressions(this.authTokenSecret, List.of(
+                NagPackSuppression.builder()
+                        .id("AwsSolutions-SMG4")
+                        .reason("Redis AUTH token auto-rotation requires a custom rotation Lambda with VPC/ElastiCache access; not implemented in this demo")
+                        .build()
+        ));
 
         // Create subnet group for Redis using the selected subnets
         List<String> subnetIds = vpc.selectSubnets(subnetSelection).getSubnetIds();
@@ -64,8 +95,8 @@ public class CacheConstruct extends Construct {
                 .atRestEncryptionEnabled(true)
                 // Enable encryption in transit
                 .transitEncryptionEnabled(true)
-                // AwsSolutions-AEC6: Enable Redis AUTH for user authentication
-                .authToken("HrPortalRedisAuth2024!SecureToken")
+                // AwsSolutions-AEC6: Enable Redis AUTH with token from Secrets Manager
+                .authToken(authTokenSecret.getSecretValue().unsafeUnwrap())
                 // AwsSolutions-AEC5: Use non-default port
                 .port(Integer.parseInt(REDIS_PORT))
                 .build();
@@ -90,5 +121,15 @@ public class CacheConstruct extends Construct {
      */
     public String getRedisPort() {
         return REDIS_PORT;
+    }
+
+    /**
+     * Returns the Secrets Manager secret containing the Redis AUTH token.
+     * Used to grant read access to the Lambda function and pass the secret ARN.
+     *
+     * @return the Redis AUTH token secret
+     */
+    public Secret getAuthTokenSecret() {
+        return authTokenSecret;
     }
 }

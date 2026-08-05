@@ -13,6 +13,7 @@ import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.lambda.Code;
 import software.amazon.awscdk.services.lambda.Function;
 import software.amazon.awscdk.services.lambda.Runtime;
+import software.amazon.awscdk.services.secretsmanager.Secret;
 import software.constructs.Construct;
 
 /**
@@ -45,6 +46,7 @@ public class ComputeConstruct extends Construct {
      * @param redisEndpoint      the Redis cluster endpoint address
      * @param redisPort          the Redis cluster endpoint port
      * @param openSearchDomainArn the OpenSearch domain ARN for scoped IAM permissions
+     * @param redisAuthTokenSecret the Secrets Manager secret holding the Redis AUTH token
      */
     public ComputeConstruct(final Construct scope, final String id,
                             final IVpc vpc,
@@ -54,7 +56,8 @@ public class ComputeConstruct extends Construct {
                             final String openSearchEndpoint,
                             final String redisEndpoint,
                             final String redisPort,
-                            final String openSearchDomainArn) {
+                            final String openSearchDomainArn,
+                            final Secret redisAuthTokenSecret) {
         super(scope, id);
 
         this.function = Function.Builder.create(this, "SearchHandler")
@@ -72,9 +75,13 @@ public class ComputeConstruct extends Construct {
                         "POLICY_STORE_ID", policyStoreId,
                         "OPENSEARCH_ENDPOINT", openSearchEndpoint,
                         "REDIS_ENDPOINT", redisEndpoint,
-                        "REDIS_PORT", redisPort
+                        "REDIS_PORT", redisPort,
+                        "REDIS_AUTH_SECRET_ARN", redisAuthTokenSecret.getSecretArn()
                 ))
                 .build();
+
+        // Grant the Lambda permission to read the Redis AUTH token secret
+        redisAuthTokenSecret.grantRead(this.function);
 
         // AwsSolutions-IAM4: Replace managed VPC policy with scoped inline policy
         // Grant ENI management for VPC-attached Lambda (instead of AWSLambdaVPCAccessExecutionRole)
