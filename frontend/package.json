@@ -12,7 +12,7 @@
   "dependencies": {
     "@aws-amplify/auth": "^6.7.0",
     "aws-amplify": "^6.8.0",
-    "axios": "^1.7.0",
+    "axios": "^1.20.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router": "^8.3.0"
