@@ -7,6 +7,7 @@ import software.amazon.awscdk.RemovalPolicy;
 import software.amazon.awscdk.services.cognito.AdvancedSecurityMode;
 import software.amazon.awscdk.services.cognito.AutoVerifiedAttrs;
 import software.amazon.awscdk.services.cognito.CfnUserPoolUser;
+import software.amazon.awscdk.services.cognito.ClientAttributes;
 import software.amazon.awscdk.services.cognito.CognitoDomainOptions;
 import software.amazon.awscdk.services.cognito.OAuthFlows;
 import software.amazon.awscdk.services.cognito.OAuthScope;
@@ -15,6 +16,7 @@ import software.amazon.awscdk.services.cognito.PasswordPolicy;
 import software.amazon.awscdk.services.cognito.SignInAliases;
 import software.amazon.awscdk.services.cognito.StandardAttribute;
 import software.amazon.awscdk.services.cognito.StandardAttributes;
+import software.amazon.awscdk.services.cognito.StandardAttributesMask;
 import software.amazon.awscdk.services.cognito.StringAttribute;
 import software.amazon.awscdk.services.cognito.UserPool;
 import software.amazon.awscdk.services.cognito.UserPoolClient;
@@ -104,6 +106,14 @@ public class AuthConstruct extends Construct {
                         .callbackUrls(List.of("http://localhost:5173/", "http://localhost:5173/callback"))
                         .logoutUrls(List.of("http://localhost:5173/"))
                         .build())
+                // Security: explicitly allowlist the attributes end users may write via
+                // UpdateUserAttributes. Without this, Cognito lets users self-modify every
+                // mutable attribute, including custom:role, which the authorization model
+                // trusts. Roles can only be changed by administrators (AdminUpdateUserAttributes).
+                .writeAttributes(new ClientAttributes()
+                        .withStandardAttributes(StandardAttributesMask.builder()
+                                .email(true)
+                                .build()))
                 .build();
 
         // Create predefined users with temporary passwords

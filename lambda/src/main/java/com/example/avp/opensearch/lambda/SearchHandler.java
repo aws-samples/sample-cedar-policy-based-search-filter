@@ -32,7 +32,13 @@ public class SearchHandler implements RequestHandler<APIGatewayProxyRequestEvent
         "Access-Control-Allow-Headers", "Content-Type,Authorization",
         "Access-Control-Allow-Methods", "POST,OPTIONS"
     );
-
+    /**
+     * Roles recognized by the authorization model. Requests carrying any other
+     * role value (or none) are denied. Keep in sync with the Cedar policies and
+     * the users provisioned in AuthConstruct.
+     */
+    private static final Set<String> KNOWN_ROLES =
+        Set.of("Employee", "USHRManager", "GlobalHRAdmin", "Recruiter");
     private final ObjectMapper objectMapper;
     private final CoarseAuthorizationService coarseAuthorizationService;
     private final AuthorizationContextService authorizationContextService;
@@ -95,6 +101,11 @@ public class SearchHandler implements RequestHandler<APIGatewayProxyRequestEvent
             // 2. Extract user identity from Cognito claims
             String userId = extractUserId(event);
             String role = extractRole(event);
+            // Fail closed on missing identity or unrecognized role
+            if (userId == null || role == null || !KNOWN_ROLES.contains(role)) {
+                LOGGER.warning("Rejecting search request with missing identity or unrecognized role");
+                return buildResponse(200, new SearchResponse(Collections.emptyMap(), 0, null));
+            }
             LOGGER.info(() -> "Processing search request for role=" + role);
 
             // 3. Layer 1: Coarse-grained authorization - get permitted entity types
@@ -176,25 +187,27 @@ public class SearchHandler implements RequestHandler<APIGatewayProxyRequestEvent
     /**
      * Extracts the user ID from Cognito claims in the request context.
      * Looks for "sub" or "cognito:username" in the authorizer claims.
+     * 
+     * @return the user ID, or null if no identity claim is present
      */
     @SuppressWarnings("unchecked")
     private String extractUserId(APIGatewayProxyRequestEvent event) {
         Map<String, Object> claims = getCognitoClaims(event);
         if (claims == null) {
-            return "unknown";
+            return null;
         }
 
         Object sub = claims.get("sub");
-        if (sub != null) {
+        if (sub != null  && !sub.toString().isBlank()) {
             return sub.toString();
         }
 
         Object username = claims.get("cognito:username");
-        if (username != null) {
+        if (username != null && !username.toString().isBlank()) {
             return username.toString();
         }
 
-        return "unknown";
+        return null;
     }
 
     /**
@@ -205,15 +218,11 @@ public class SearchHandler implements RequestHandler<APIGatewayProxyRequestEvent
     private String extractRole(APIGatewayProxyRequestEvent event) {
         Map<String, Object> claims = getCognitoClaims(event);
         if (claims == null) {
-            return "Employee";
+            return null;
         }
 
         Object role = claims.get("custom:role");
-        if (role != null) {
-            return role.toString();
-        }
-
-        return "Employee";
+        return role != null ? role.toString() : null;
     }
 
     /**
